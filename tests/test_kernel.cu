@@ -1,6 +1,15 @@
 #include "test_kernel.h"
 
-__device__ void draw(uchar4 *frame, const unsigned int idx, const unsigned int x, const unsigned int y, const unsigned int width, const unsigned int height){
+__device__ void draw(uchar4 *frame, const unsigned int idx, const unsigned int x, const unsigned int y, const unsigned int width, const unsigned int height, void *user_pointer){
+    if(*((int*)user_pointer) == 0){
+        frame[idx].x = 255;
+        frame[idx].y = 0;
+        frame[idx].z = 0;
+        frame[idx].w = 255;
+
+        return;
+    }
+
     float w = (float) width / 4;
     float h = (float) height / 4;
     float cr = x/w - 2.0;
@@ -42,9 +51,11 @@ __device__ void draw(uchar4 *frame, const unsigned int idx, const unsigned int x
     }else{
         frame[idx].z = 0;
     }
+
+    frame[idx].w = 255;
 }
 
-__global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height){
+__global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer){
     uchar4 *frame = &d_frames[buffer * width * height];
     unsigned int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
 
@@ -52,12 +63,12 @@ __global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, co
         unsigned int x = idx % width;
         unsigned int y = idx / width;
 
-        draw(frame, idx, x, y, width, height);
+        draw(frame, idx, x, y, width, height, user_pointer);
 
         idx += blockDim.x * blockDim.y;
     }
 }
 
-void test_kernel(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height){
-    testKernel<<<blocks, threads_per_block, shared_memory_per_block, stream>>>(d_frames, buffer_count, buffer, width, height);
+void test_kernel(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer){
+    testKernel<<<blocks, threads_per_block, shared_memory_per_block, stream>>>(d_frames, buffer_count, buffer, width, height, user_pointer);
 }
