@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 
 #ifdef __APPLE__
@@ -11,33 +13,53 @@
 
 #include <cuda_gl_interop.h>
 
-#include "cuda_assert.h"
-
 namespace pee{
+    #ifdef PEE_DEBUG
+
+    #include <cuda_runtime.h>
+
+    inline cudaError_t cuda_assert(const cudaError_t code, const char* const file, const unsigned int line){
+        if(code != cudaSuccess){
+            std::cout << "CUDA error \"" << cudaGetErrorString(code) << "\" (" << code << ") on line " << line << " in " << file << std::endl;
+            exit(code);
+        }
+
+        return code;
+    }
+
+    #define cuda(...) cuda_assert(cuda##__VA_ARGS__, __FILE__, __LINE__);
+
+    #else
+
+    #define cuda(...) cuda##__VA_ARGS__;
+
+    #endif
+
     GLuint pixel_buffer_object = 0;
     unsigned int current_buffer = 0;
     unsigned int buffer_count = 0;
     unsigned int width = 0;
     unsigned int height = 0;
-    void (*closeFunc)(void) = NULL;
-    void (*displayFunc)(void) = NULL;
-    void (*reshapeFunc)(int, int) = NULL;
+    void (*close_func)(void) = NULL;
+    void (*display_func)(void) = NULL;
+    void (*reshape_func)(int, int) = NULL;
     int cuda_device_id = -1;
     cudaDeviceProp device_properties;
-    void (*kernel_launcher)(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height) = NULL;
+    void (*kernel_launcher)(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *pointer) = NULL;
     cudaStream_t stream = NULL;
     cudaGraphicsResource_t graphics_resource = NULL;
     unsigned int threads = 0;
     unsigned int threads_per_block = 0;
     unsigned int blocks = 0;
-    int current_window = NULL;
+    int current_window = -1;
+    void *m_user_pointer;
 
     inline void initOpenGL(int argc, char** argv){
         glutInit(&argc, argv);
         glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
     }
 
-    inline void createWindow(const unsigned int desired_width, const unsigned int desired_height, const char *title){
+    inline int createWindow(const unsigned int desired_width, const unsigned int desired_height, const char *title){
         glutInitWindowSize(desired_width, desired_height);
         current_window = glutCreateWindow(title);
 #ifndef __APPLE__
@@ -48,6 +70,8 @@ namespace pee{
         
         width = desired_width;
         height = desired_height;
+
+        return current_window;
     }
 
     inline void setWindow(int window){
@@ -64,10 +88,10 @@ namespace pee{
         https://openglut.sourceforge.net/group__windowcallback.html
     */
     inline void setCloseFunction(void (*func)(void)){
-        closeFunc = func;
+        close_func = func;
 
         glutCloseFunc([](){
-            closeFunc();
+            close_func();
 
             if(stream != NULL){
                 cuda(StreamDestroy(stream));
@@ -80,15 +104,15 @@ namespace pee{
     }
 
     inline void setDisplayFunction(void (*func)(void)){
-        displayFunc = func;
+        display_func = func;
 
         glutDisplayFunc([](){
-            displayFunc();
+            display_func();
             
             uchar4 *d_frames;
             cuda(GraphicsMapResources(1, &graphics_resource, stream));
             cuda(GraphicsResourceGetMappedPointer((void **)&d_frames, NULL, graphics_resource));
-            kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height);
+            kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
             cudaStreamSynchronize(stream);
             cuda(GraphicsUnmapResources(1, &graphics_resource, stream));
 
@@ -113,10 +137,10 @@ namespace pee{
     }
 
     inline void setReshapeFunction(void (*func)(int, int)){
-        reshapeFunc = func;
+        reshape_func = func;
 
         glutReshapeFunc([](int new_width, int new_height){
-            reshapeFunc(new_width, new_height);
+            reshape_func(new_width, new_height);
 
             if(new_width <= 0 || new_height <= 0){
                 return;
@@ -326,7 +350,11 @@ namespace pee{
         }
     }
 
-    inline void setKernel(void (*kernel)(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height)){
+    inline void setUserPointer(void *user_pointer){
+        m_user_pointer = user_pointer;
+    }
+
+    inline void setKernel(void (*kernel)(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer)){
         kernel_launcher = kernel;
     }
 
@@ -353,9 +381,9 @@ namespace pee{
     }
 
     inline void start(){
-        if(closeFunc == NULL){
+        if(close_func == NULL){
             glutCloseFunc([](){
-                closeFunc();
+                close_func();
 
                 if(stream != NULL){
                     cuda(StreamDestroy(stream));
@@ -367,12 +395,12 @@ namespace pee{
             });
         }
 
-        if(displayFunc == NULL){
+        if(display_func == NULL){
             glutDisplayFunc([](){
                 uchar4 *d_frames;
                 cuda(GraphicsMapResources(1, &graphics_resource, stream));
                 cuda(GraphicsResourceGetMappedPointer((void **)&d_frames, NULL, graphics_resource));
-                kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height);
+                kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
                 cudaStreamSynchronize(stream);
                 cuda(GraphicsUnmapResources(1, &graphics_resource, stream));
 
@@ -392,7 +420,7 @@ namespace pee{
             });
         }
 
-        if(reshapeFunc == NULL){
+        if(reshape_func == NULL){
             glutReshapeFunc([](int new_width, int new_height){
                 if(new_width <= 0 || new_height <= 0){
                     return;
@@ -420,6 +448,8 @@ namespace pee{
     }
 
     inline void stop(){
-        glutDestroyWindow(current_window);
+        if(current_window != -1){
+            glutDestroyWindow(current_window);
+        }
     }
 };
