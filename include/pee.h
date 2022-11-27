@@ -56,7 +56,7 @@ namespace pee{
 
     inline void initOpenGL(int argc, char** argv){
         glutInit(&argc, argv);
-        glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
+        glutInitDisplayMode(GLUT_RGBA | GLUT_SINGLE);
     }
 
     inline int createWindow(const unsigned int desired_width, const unsigned int desired_height, const char *title){
