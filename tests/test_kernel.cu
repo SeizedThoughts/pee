@@ -1,6 +1,18 @@
 #include "test_kernel.h"
 
-__device__ void draw(uchar4 *frame, const unsigned int idx, const unsigned int x, const unsigned int y, const unsigned int width, const unsigned int height, void *user_pointer){
+__device__ void draw(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int idx, const unsigned int x, const unsigned int y, const unsigned int width, const unsigned int height, void *user_pointer){
+    uchar4 *frame = &d_frames[buffer * width * height];
+
+    //used to test past frame buffer memory
+    // if(!(d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].x == 0 && d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].y == 0 && d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].z == 0)){
+    //     frame[idx].x = d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].x;
+    //     frame[idx].y = d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].y;
+    //     frame[idx].z = d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].z;
+    //     frame[idx].w = d_frames[idx + (width * height * ((buffer + buffer_count - 1) % buffer_count))].w;
+
+    //     return;
+    // }
+    
     if(*((int*)user_pointer) == 0){
         frame[idx].x = 255;
         frame[idx].y = 0;
@@ -56,14 +68,13 @@ __device__ void draw(uchar4 *frame, const unsigned int idx, const unsigned int x
 }
 
 __global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer){
-    uchar4 *frame = &d_frames[buffer * width * height];
     unsigned int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
 
     while(idx < width * height){
         unsigned int x = idx % width;
         unsigned int y = idx / width;
 
-        draw(frame, idx, x, y, width, height, user_pointer);
+        draw(d_frames, buffer_count, buffer, idx, x, y, width, height, user_pointer);
 
         idx += blockDim.x * blockDim.y;
     }
