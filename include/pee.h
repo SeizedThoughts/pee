@@ -359,7 +359,9 @@ namespace pee{
     }
 
     inline void requestRedisplay(){
-        glutPostRedisplay();
+        if(current_window != -1){
+            glutPostRedisplay();
+        }
     }
 
     inline void createBuffers(const unsigned int count){
@@ -450,6 +452,7 @@ namespace pee{
     inline void stop(){
         if(current_window != -1){
             glutDestroyWindow(current_window);
+            current_window = -1;
         }
     }
 };
