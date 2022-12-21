@@ -67,7 +67,7 @@ __device__ void draw(uchar4 *d_frames, const unsigned int buffer_count, const un
     frame[idx].w = 255;
 }
 
-__global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer){
+__global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, unsigned int blocks, const unsigned int width, const unsigned int height, void *user_pointer){
     unsigned int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
 
     while(idx < width * height){
@@ -76,10 +76,10 @@ __global__ void testKernel(uchar4 *d_frames, const unsigned int buffer_count, co
 
         draw(d_frames, buffer_count, buffer, idx, x, y, width, height, user_pointer);
 
-        idx += blockDim.x * blockDim.y;
+        idx += blockDim.x * blocks;
     }
 }
 
 void test_kernel(const unsigned int blocks, const unsigned int threads_per_block, const unsigned int shared_memory_per_block, cudaStream_t stream, uchar4 *d_frames, const unsigned int buffer_count, const unsigned int buffer, const unsigned int width, const unsigned int height, void *user_pointer){
-    testKernel<<<blocks, threads_per_block, shared_memory_per_block, stream>>>(d_frames, buffer_count, buffer, width, height, user_pointer);
+    testKernel<<<blocks, threads_per_block, shared_memory_per_block, stream>>>(d_frames, buffer_count, buffer, blocks, width, height, user_pointer);
 }
