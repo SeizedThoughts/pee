@@ -238,7 +238,6 @@ namespace pee{
 
             while(cudaGetLastError() == cudaErrorLaunchOutOfResources){
                 resizeGrid(blocks + 1);
-                std::cout << blocks << " * " << threads_per_block << std::endl;
                 kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
                 cuda(StreamSynchronize(stream));
             }
