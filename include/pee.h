@@ -113,7 +113,7 @@ namespace pee{
             cuda(GraphicsMapResources(1, &graphics_resource, stream));
             cuda(GraphicsResourceGetMappedPointer((void **)&d_frames, NULL, graphics_resource));
             kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
-            cudaStreamSynchronize(stream);
+            cuda(StreamSynchronize(stream));
             cuda(GraphicsUnmapResources(1, &graphics_resource, stream));
 
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, buffer_count * height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
