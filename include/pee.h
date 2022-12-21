@@ -103,6 +103,127 @@ namespace pee{
         });
     }
 
+    //CUDA core count given a GPU's device properties
+    inline int getCudaCores(cudaDeviceProp devProp){  
+        int cores = -1;
+        int mp = devProp.multiProcessorCount;
+
+        switch (devProp.major){
+            case 2: // Fermi
+                if (devProp.minor == 1){
+                    cores = mp * 48;
+                }else{
+                    cores = mp * 32;
+                }
+                break;
+            case 3: // Kepler
+                cores = mp * 192;
+                break;
+            case 5: // Maxwell
+                cores = mp * 128;
+                break;
+            case 6: // Pascal
+                if((devProp.minor == 1) || (devProp.minor == 2)){
+                    cores = mp * 128;
+                }else if(devProp.minor == 0){
+                    cores = mp * 64;
+                }
+                break;
+            case 7: // Volta and Turing
+                if((devProp.minor == 0) || (devProp.minor == 5)){
+                    cores = mp * 64;
+                }
+                break;
+            case 8: // Ampere
+                if(devProp.minor == 0){
+                    cores = mp * 64;
+                }else if(devProp.minor == 6){
+                    cores = mp * 128;
+                }
+                break;
+        }
+
+        return cores;
+    }
+
+    //Select the best device choice among available devices
+    inline int selectDevice(){
+        int deviceCount = 0;
+        cuda(GetDeviceCount(&deviceCount));
+
+        if(deviceCount == 0){
+            return -1;
+        }
+
+        cudaDeviceProp props;
+        int recommended_device_id = 0;
+        int recommended_device_cores = 0;
+        for(int i = 0; i < deviceCount; i++){
+            cuda(GetDeviceProperties(&props, i));
+            int cores = getCudaCores(props);
+            if(recommended_device_cores > cores){
+                recommended_device_cores = cores;
+                recommended_device_id = i;
+            }
+        }
+
+        return recommended_device_id;
+    }
+
+    inline void resizeGrid(const unsigned int minimum_blocks){
+        threads_per_block = NULL;
+        blocks = minimum_blocks;
+        for(int i = 0; i < sqrt(threads); i++){
+            if((device_properties.maxThreadsPerBlock >= (threads / blocks)) && (threads == ((threads / blocks) * blocks))){
+                threads_per_block = threads / blocks;
+                break;
+            }
+
+            blocks++;
+        }
+    }
+
+    inline int setDevice(const unsigned int id){
+        cuda(SetDevice(id));
+
+        cuda(GetDevice(&cuda_device_id));
+
+        cuda(GetDeviceProperties(&device_properties, cuda_device_id));
+
+        threads = getCudaCores(device_properties);
+
+        if(threads == -1){
+            std::cout << "No CUDA core count was found..." << std::endl;
+            return -1;
+        }
+
+        resizeGrid(1);
+
+        if(threads_per_block == NULL){
+            std::cout << "No block count was found..." << std::endl;
+            return -1;
+        }
+
+        std::cout << "CUDA device: " << device_properties.name << std::endl;
+
+        std::cout << "CUDA cores: " << blocks * threads_per_block << std::endl;
+
+        cuda(StreamCreate(&stream));
+
+        return cuda_device_id;
+    }
+
+    inline int setDevice(){
+        int best_device = selectDevice();
+
+        if(best_device == -1){
+            std::cout << "No CUDA devices were found..." << std::endl;
+            return -1;
+        }else{
+            return setDevice(best_device);
+        }
+    }
+
     inline void setDisplayFunction(void (*func)(void)){
         display_func = func;
 
@@ -114,6 +235,14 @@ namespace pee{
             cuda(GraphicsResourceGetMappedPointer((void **)&d_frames, NULL, graphics_resource));
             kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
             cuda(StreamSynchronize(stream));
+
+            while(cudaGetLastError() == cudaErrorLaunchOutOfResources){
+                resizeGrid(blocks + 1);
+                std::cout << blocks << " * " << threads_per_block << std::endl;
+                kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
+                cuda(StreamSynchronize(stream));
+            }
+
             cuda(GraphicsUnmapResources(1, &graphics_resource, stream));
 
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, buffer_count * height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -233,123 +362,6 @@ namespace pee{
         glutTimerFunc(msecs, func, value);
     }
 
-    //CUDA core count given a GPU's device properties
-    inline int getCudaCores(cudaDeviceProp devProp){  
-        int cores = -1;
-        int mp = devProp.multiProcessorCount;
-
-        switch (devProp.major){
-            case 2: // Fermi
-                if (devProp.minor == 1){
-                    cores = mp * 48;
-                }else{
-                    cores = mp * 32;
-                }
-                break;
-            case 3: // Kepler
-                cores = mp * 192;
-                break;
-            case 5: // Maxwell
-                cores = mp * 128;
-                break;
-            case 6: // Pascal
-                if((devProp.minor == 1) || (devProp.minor == 2)){
-                    cores = mp * 128;
-                }else if(devProp.minor == 0){
-                    cores = mp * 64;
-                }
-                break;
-            case 7: // Volta and Turing
-                if((devProp.minor == 0) || (devProp.minor == 5)){
-                    cores = mp * 64;
-                }
-                break;
-            case 8: // Ampere
-                if(devProp.minor == 0){
-                    cores = mp * 64;
-                }else if(devProp.minor == 6){
-                    cores = mp * 128;
-                }
-                break;
-        }
-
-        return cores;
-    }
-
-    //Select the best device choice among available devices
-    inline int selectDevice(){
-        int deviceCount = 0;
-        cuda(GetDeviceCount(&deviceCount));
-
-        if(deviceCount == 0){
-            return -1;
-        }
-
-        cudaDeviceProp props;
-        int recommended_device_id = 0;
-        int recommended_device_cores = 0;
-        for(int i = 0; i < deviceCount; i++){
-            cuda(GetDeviceProperties(&props, i));
-            int cores = getCudaCores(props);
-            if(recommended_device_cores > cores){
-                recommended_device_cores = cores;
-                recommended_device_id = i;
-            }
-        }
-
-        return recommended_device_id;
-    }
-
-    inline int setDevice(const unsigned int id){
-        cuda(SetDevice(id));
-
-        cuda(GetDevice(&cuda_device_id));
-
-        cuda(GetDeviceProperties(&device_properties, cuda_device_id));
-
-        threads = getCudaCores(device_properties);
-
-        if(threads == -1){
-            std::cout << "No CUDA core count was found..." << std::endl;
-            return -1;
-        }
-
-        threads_per_block = NULL;
-        blocks = 0;
-        for(int i = 0; i < sqrt(threads); i++){
-            blocks++;
-
-            if((device_properties.maxThreadsPerBlock >= (threads / blocks)) && (threads == ((threads / blocks) * blocks))){
-                threads_per_block = threads / blocks;
-                break;
-            }
-        }
-
-        if(threads_per_block == NULL){
-            std::cout << "No block count was found..." << std::endl;
-            return -1;
-        }
-
-        std::cout << "CUDA device: " << device_properties.name << std::endl;
-
-        std::cout << "CUDA cores: " << blocks * threads_per_block << std::endl;
-
-        cuda(StreamCreate(&stream));
-
-        return cuda_device_id;
-    }
-
-    inline int setDevice(){
-        int best_device = selectDevice();
-
-        if(best_device == -1){
-            std::cout << "No CUDA devices were found..." << std::endl;
-            return -1;
-        }else{
-            return setDevice(best_device);
-        }
-    }
-
     inline void setUserPointer(void *user_pointer){
         m_user_pointer = user_pointer;
     }
@@ -403,7 +415,16 @@ namespace pee{
                 cuda(GraphicsMapResources(1, &graphics_resource, stream));
                 cuda(GraphicsResourceGetMappedPointer((void **)&d_frames, NULL, graphics_resource));
                 kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
-                cudaStreamSynchronize(stream);
+                cuda(StreamSynchronize(stream));
+
+                // std::cout << "last error: " << cudaGetLastError() << std::endl;
+                while(cudaGetLastError() == cudaErrorLaunchOutOfResources){
+                    resizeGrid(blocks + 1);
+                    std::cout << blocks << " * " << threads_per_block << std::endl;
+                    kernel_launcher(blocks, threads_per_block, 0, stream, d_frames, buffer_count, current_buffer, width, height, m_user_pointer);
+                    cuda(StreamSynchronize(stream));
+                }
+
                 cuda(GraphicsUnmapResources(1, &graphics_resource, stream));
 
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, buffer_count * height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
