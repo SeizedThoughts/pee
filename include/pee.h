@@ -20,7 +20,7 @@ namespace pee{
 
     inline cudaError_t cuda_assert(const cudaError_t code, const char* const file, const unsigned int line){
         if(code != cudaSuccess){
-            std::cout << "CUDA error \"" << cudaGetErrorString(code) << "\" (" << code << ") on line " << line << " in " << file << std::endl;
+            std::cout << "CUDA error \"" << cudaGetErrorString(code) << "\" (" << code << "): " << file << ":" << line << std::endl;
             exit(code);
         }
 
